@@ -9,6 +9,7 @@
     tb = client.fetch_trial_balance("UZ01", "2025-03")
 """
 
+import base64
 import requests
 import pandas as pd
 from datetime import date
@@ -44,11 +45,12 @@ class OneCODataClient:
             timeout: 요청 타임아웃 (초)
         """
         self.odata_url = base_url.rstrip("/") + "/odata/standard.odata"
-        self.auth = (username, password)
         self.verify_ssl = verify_ssl
         self.timeout = timeout
         self._session = requests.Session()
-        self._session.auth = self.auth
+        # 키릴 문자 등 non-latin-1 사용자명 지원: UTF-8 Base64 Basic Auth
+        credentials = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+        self._session.headers["Authorization"] = f"Basic {credentials}"
         self._session.verify = self.verify_ssl
 
     # ──────────────────────────────────────────────────────────────
