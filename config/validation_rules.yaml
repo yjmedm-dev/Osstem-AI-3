@@ -1,0 +1,130 @@
+# 검증 규칙 정의
+# severity: CRITICAL / ERROR / WARNING
+# auto: true = 자동 검증 가능 / false = 사람 검수 필요
+
+rules:
+
+  # ── 산술 검증 (AR) ────────────────────────────────
+  - id: AR-001
+    name: 대차균형 검증
+    description: 차변 합계와 대변 합계가 일치해야 한다
+    severity: CRITICAL
+    auto: true
+
+  - id: AR-002
+    name: 회계등식 검증
+    description: 자산 합계 = 부채 합계 + 자본 합계
+    severity: CRITICAL
+    auto: true
+
+  - id: AR-003
+    name: 이익잉여금 검증
+    description: 전기 이익잉여금 + 당기순이익 = 기말 이익잉여금
+    severity: ERROR
+    auto: true
+
+  # ── 기간 비교 (PR) ────────────────────────────────
+  - id: PR-001
+    name: 전기 대비 이상 변동
+    description: 전기 대비 30% 초과 변동 항목 플래그
+    severity: WARNING
+    auto: true
+    threshold: 0.30
+
+  # ── 이상값 탐지 (AN) ──────────────────────────────
+  - id: AN-001
+    name: 필수 계정 잔액 0 탐지
+    description: 필수(required=all) 계정의 잔액이 0인 경우
+    severity: WARNING
+    auto: true
+
+  - id: AN-002
+    name: 자산 계정 음수 잔액
+    description: 자산 계정(차감 계정 제외)에 음수 잔액이 있는 경우
+    severity: ERROR
+    auto: true
+
+  - id: AN-003
+    name: 비정상적 반올림 집중
+    description: 동일 자릿수 반올림이 과도하게 집중된 경우
+    severity: WARNING
+    auto: true
+
+  # ── 충당금 검증 (PV) ──────────────────────────────
+  - id: PV-001
+    name: 재고자산평가충당금 검증
+    description: 설정 요율 × 저속·불용 재고 잔액 = 충당금 금액
+    severity: ERROR
+    auto: true
+    provision_type: inventory_valuation
+    tolerance: 0.01   # 1% 오차 허용
+
+  - id: PV-002
+    name: 대손충당금 검증
+    description: Aging 구간별 요율 × 매출채권 잔액 = 충당금 금액
+    severity: ERROR
+    auto: true
+    provision_type: allowance_for_doubtful
+    tolerance: 0.01
+
+  - id: PV-003
+    name: 퇴직급여충당금 검증
+    description: 기말 퇴직금 추계액 − 사외적립자산 = 충당금 잔액
+    severity: ERROR
+    auto: true
+    provision_type: retirement_benefit
+    tolerance: 0.01
+
+  - id: PV-004
+    name: 리스회계충당금 검증
+    description: 리스부채 상각 스케줄 기준 잔액 일치 여부
+    severity: ERROR
+    auto: true
+    provision_type: lease_liability
+    tolerance: 0.01
+
+  - id: PV-005
+    name: 반품충당금 검증
+    description: 과거 반품률 × 당기 매출 = 반품충당금 설정액
+    severity: WARNING
+    auto: true
+    provision_type: sales_return
+    tolerance: 0.05   # 반품률 추정치이므로 5% 허용
+
+  - id: PV-006
+    name: 단품충당금 검증
+    description: 단품 지정 목록 재고 잔액 × 요율 = 충당금 금액
+    severity: ERROR
+    auto: true
+    provision_type: discontinued_item
+    tolerance: 0.01
+
+  - id: PV-007
+    name: FOC충당금 검증
+    description: FOC 예상 수량 × 원가 = FOC충당금 잔액
+    severity: WARNING
+    auto: true
+    provision_type: free_of_charge
+    tolerance: 0.05
+
+  - id: PV-008
+    name: 수익인식충당금 검증
+    description: 계약 조건 미충족 이연 수익 잔액 = 수익인식충당금
+    severity: ERROR
+    auto: true
+    provision_type: revenue_recognition
+    tolerance: 0.01
+
+  - id: PV-009
+    name: 충당금 환입 사유 체크
+    description: 충당금이 전기 대비 감소한 경우 환입 사유 존재 여부
+    severity: WARNING
+    auto: true   # 패턴 감지 후 사람 검수로 에스컬레이션
+
+  # ── 내부거래 검증 (IT) ────────────────────────────
+  - id: IT-001
+    name: 내부거래 상계 검증
+    description: 법인 간 내부거래 채권·채무 금액이 일치해야 한다
+    severity: ERROR
+    auto: true
+    tolerance: 0.001  # 환율 차이로 인한 소액 불일치 허용

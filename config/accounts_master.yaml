@@ -1,0 +1,129 @@
+# 계정과목 마스터
+# type: asset(자산) / liability(부채) / equity(자본) / revenue(수익) / expense(비용)
+# required: 해당 계정이 반드시 존재해야 하는 법인 유형 (all / manufacturing / trading)
+
+accounts:
+  # ── 자산 ──────────────────────────────────────────
+  - code: "1100"
+    name: 현금및현금성자산
+    type: asset
+    required: all
+
+  - code: "1200"
+    name: 매출채권
+    type: asset
+    required: all
+
+  - code: "1201"
+    name: 대손충당금
+    type: asset  # 차감 계정 (음수로 표시)
+    required: all
+    provision: true
+    provision_type: allowance_for_doubtful
+
+  - code: "1300"
+    name: 재고자산
+    type: asset
+    required: manufacturing
+
+  - code: "1301"
+    name: 재고자산평가충당금
+    type: asset  # 차감 계정
+    required: manufacturing
+    provision: true
+    provision_type: inventory_valuation
+
+  - code: "1302"
+    name: 단품충당금
+    type: asset  # 차감 계정
+    required: manufacturing
+    provision: true
+    provision_type: discontinued_item
+
+  - code: "1400"
+    name: 사용권자산(ROU)
+    type: asset
+    required: all
+    ifrs: IFRS16
+
+  # ── 부채 ──────────────────────────────────────────
+  - code: "2100"
+    name: 매입채무
+    type: liability
+    required: all
+
+  - code: "2200"
+    name: 리스부채
+    type: liability
+    required: all
+    ifrs: IFRS16
+    provision: true
+    provision_type: lease_liability
+
+  - code: "2300"
+    name: 퇴직급여충당금
+    type: liability
+    required: retirement_mandatory
+    provision: true
+    provision_type: retirement_benefit
+
+  - code: "2400"
+    name: 반품충당금
+    type: liability
+    required: all
+    provision: true
+    provision_type: sales_return
+
+  - code: "2401"
+    name: FOC충당금
+    type: liability
+    required: all
+    provision: true
+    provision_type: free_of_charge
+
+  - code: "2402"
+    name: 수익인식충당금
+    type: liability
+    required: all
+    provision: true
+    provision_type: revenue_recognition
+    ifrs: IFRS15
+
+  # ── 자본 ──────────────────────────────────────────
+  - code: "3100"
+    name: 자본금
+    type: equity
+    required: all
+
+  - code: "3200"
+    name: 이익잉여금
+    type: equity
+    required: all
+
+  # ── 수익 ──────────────────────────────────────────
+  - code: "4100"
+    name: 매출액
+    type: revenue
+    required: all
+
+  - code: "4200"
+    name: 기타영업수익
+    type: revenue
+    required: all
+
+  # ── 비용 ──────────────────────────────────────────
+  - code: "5100"
+    name: 매출원가
+    type: expense
+    required: all
+
+  - code: "5200"
+    name: 판매비와관리비
+    type: expense
+    required: all
+
+  - code: "5300"
+    name: 충당금전입액
+    type: expense
+    required: all
+    provision: true
