@@ -1,0 +1,49 @@
+# 환경 변수 (API 키 등 절대 커밋 금지)
+.env
+
+# 법인 원본 엑셀 파일 (읽기 전용, 커밋 금지)
+data/input/*
+!data/input/.gitkeep
+
+# 처리 결과물 (재생성 가능)
+data/processed/*
+!data/processed/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 가상환경
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 테스트 / 커버리지
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 로그
+*.log
+
+# 임시 파일
+*.tmp
+*.bak
