@@ -13,6 +13,8 @@ _FALLBACK_RATES: dict[str, float] = {
     "VND": 0.054,
     "IDR": 0.086,
     "JPY": 8.9,
+    "UZS": 0.106,   # 우즈베키스탄 숨 (1 USD≈12,600 UZS, 1 USD≈1,340 KRW 기준)
+    "THB": 38.5,
 }
 
 
