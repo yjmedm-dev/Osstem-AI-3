@@ -2,11 +2,54 @@ from models.trial_balance import TrialBalance
 from models.validation_result import ValidationResult, ValidationIssue, Severity
 from validation.rules.base_rule import BaseRule
 
-# 필수 계정 목록 (required=all)
-REQUIRED_ACCOUNT_CODES = {"1100", "1200", "2100", "3100", "3200", "4100", "5100"}
+# 필수 계정 목록 (required=all) — 구 코드 + 신계정 코드 병행 지원
+REQUIRED_ACCOUNT_CODES = {
+    # 구 계정 코드 체계
+    "1100", "1200", "2100", "3100", "3200", "4100", "5100",
+    # 신계정 코드 체계 (FP/PL)
+    "FP01-01-01-0010",   # 현금및현금성자산
+    "FP01-01-01-0070",   # 매출채권
+    "FP02-01-01-0010",   # 매입채무
+    "FP03-01-01-0010",   # 보통주자본금
+    "FP03-05-01-0060",   # 이익잉여금
+    "PL01-01-0020",      # 본사제품매출액
+    "PL02-01-0020",      # 본사제품매출원가
+}
 
-# 자산 계정 (차감 계정 제외)
-ASSET_ACCOUNT_CODES = {"1100", "1200", "1300", "1400"}
+# 자산 계정 (차감 계정 제외) — 구 코드 + 신계정 코드 병행 지원
+ASSET_ACCOUNT_CODES = {
+    # 구 계정 코드 체계
+    "1100", "1200", "1300", "1400",
+    # 신계정 코드 체계
+    "FP01-01-01-0010",   # 현금및현금성자산
+    "FP01-01-01-0070",   # 매출채권
+    "FP01-01-02-0010-02", # 본사제품매입분
+    "FP01-01-02-0110",   # 저장품
+    "FP01-02-02-0110",   # 차량운반구
+    "FP01-02-02-0160",   # 집기비품
+}
+
+
+def _detect_code_style(tb: TrialBalance) -> str:
+    """시산표 계정 코드 형식 감지: 'new'(FP/PL 신계정) 또는 'legacy'(숫자 구 계정)."""
+    for row in tb.rows:
+        if row.account_code.startswith(("FP", "PL")):
+            return "new"
+    return "legacy"
+
+
+# 구 계정 코드 필수 목록
+_REQUIRED_LEGACY = {"1100", "1200", "2100", "3100", "3200", "4100", "5100"}
+# 신계정 코드 필수 목록
+_REQUIRED_NEW = {
+    "FP01-01-01-0010",   # 현금및현금성자산
+    "FP01-01-01-0070",   # 매출채권
+    "FP02-01-01-0010",   # 매입채무
+    "FP03-01-01-0010",   # 보통주자본금
+    "FP03-05-01-0060",   # 이익잉여금
+    "PL01-01-0020",      # 본사제품매출액
+    "PL02-01-0020",      # 본사제품매출원가
+}
 
 
 class RequiredAccountZeroRule(BaseRule):
@@ -16,7 +59,8 @@ class RequiredAccountZeroRule(BaseRule):
     name = "필수 계정 잔액 0 탐지"
 
     def validate(self, tb: TrialBalance, result: ValidationResult) -> None:
-        for code in REQUIRED_ACCOUNT_CODES:
+        codes = _REQUIRED_NEW if _detect_code_style(tb) == "new" else _REQUIRED_LEGACY
+        for code in codes:
             row = tb.get_row(code)
             if row is None or row.balance == 0:
                 result.add(ValidationIssue(

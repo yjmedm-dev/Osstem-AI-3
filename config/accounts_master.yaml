@@ -127,3 +127,406 @@ accounts:
     type: expense
     required: all
     provision: true
+
+# ══════════════════════════════════════════════════════════════════
+# 연결 신계정 코드 체계 (FP / PL)
+# IFRS Report 기준 — 해외법인 연결 시산표에서 사용
+# ══════════════════════════════════════════════════════════════════
+
+  # ── 유동자산 ──────────────────────────────────────────────────
+  - code: "FP01-01-01-0010"
+    name: 현금및현금성자산
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0070"
+    name: 매출채권
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0080"
+    name: 대손충당금(매출채권)
+    type: asset
+    required: all
+    provision: true
+    provision_type: allowance_for_doubtful
+
+  - code: "FP01-01-01-0100"
+    name: 미수금
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0140"
+    name: 단기대여금
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0170"
+    name: 선급금
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0190"
+    name: 선급비용
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0200"
+    name: 선급법인세
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0210"
+    name: 선급부가세
+    type: asset
+    required: all
+
+  - code: "FP01-01-01-0230"
+    name: 반품계약자산
+    type: asset
+    required: all
+    ifrs: IFRS15
+
+  - code: "FP01-01-01-0240"
+    name: 수익인식자산
+    type: asset
+    required: all
+    ifrs: IFRS15
+    provision: true
+    provision_type: revenue_recognition
+
+  # ── 재고자산 ──────────────────────────────────────────────────
+  - code: "FP01-01-02-0010"
+    name: 상품
+    type: asset
+    required: trading
+
+  - code: "FP01-01-02-0010-01"
+    name: 본사상품매입분
+    type: asset
+    required: trading
+
+  - code: "FP01-01-02-0010-02"
+    name: 본사제품매입분
+    type: asset
+    required: trading
+
+  - code: "FP01-01-02-0010-03"
+    name: 미국제품매입분
+    type: asset
+    required: trading
+
+  - code: "FP01-01-02-0010-04"
+    name: 현지매입분
+    type: asset
+    required: trading
+
+  - code: "FP01-01-02-0010-05"
+    name: 기타관계사매입분
+    type: asset
+    required: trading
+
+  - code: "FP01-01-02-0020"
+    name: 상품충당금
+    type: asset
+    required: trading
+    provision: true
+    provision_type: inventory_valuation
+
+  - code: "FP01-01-02-0110"
+    name: 저장품
+    type: asset
+    required: trading
+
+  - code: "FP01-01-02-0120"
+    name: 미착품
+    type: asset
+    required: trading
+
+  # ── 비유동자산 ────────────────────────────────────────────────
+  - code: "FP01-02-02-0110"
+    name: 차량운반구
+    type: asset
+    required: all
+
+  - code: "FP01-02-02-0120"
+    name: 감가상각충당금(차량운반구)
+    type: asset
+    required: all
+
+  - code: "FP01-02-02-0160"
+    name: 집기비품
+    type: asset
+    required: all
+
+  - code: "FP01-02-02-0170"
+    name: 감가상각충당금(집기비품)
+    type: asset
+    required: all
+
+  - code: "FP01-02-02-0280"
+    name: 사용권자산
+    type: asset
+    required: all
+    ifrs: IFRS16
+
+  - code: "FP01-02-02-0290"
+    name: 감가상각충당금(사용권자산)
+    type: asset
+    required: all
+    ifrs: IFRS16
+
+  - code: "FP01-02-03-0050"
+    name: 기타의무형자산
+    type: asset
+    required: all
+
+  - code: "FP01-02-04-0030"
+    name: 보증금
+    type: asset
+    required: all
+
+  # ── 유동부채 ──────────────────────────────────────────────────
+  - code: "FP02-01-01-0010"
+    name: 매입채무
+    type: liability
+    required: all
+
+  - code: "FP02-01-01-0110"
+    name: 미지급금
+    type: liability
+    required: all
+
+  - code: "FP02-01-01-0120"
+    name: 선수금
+    type: liability
+    required: all
+
+  - code: "FP02-01-01-0150"
+    name: 미지급비용
+    type: liability
+    required: all
+
+  - code: "FP02-01-01-0180"
+    name: 부가세예수금
+    type: liability
+    required: all
+
+  - code: "FP02-01-01-0260"
+    name: 반품충당부채
+    type: liability
+    required: all
+    provision: true
+    provision_type: sales_return
+
+  - code: "FP02-01-01-0280"
+    name: 리스사용권부채(유동)
+    type: liability
+    required: all
+    ifrs: IFRS16
+    provision: true
+    provision_type: lease_liability
+
+  # ── 비유동부채 ────────────────────────────────────────────────
+  - code: "FP02-02-01-0140"
+    name: 리스사용권부채(비유동)
+    type: liability
+    required: all
+    ifrs: IFRS16
+    provision: true
+    provision_type: lease_liability
+
+  # ── 자본 ──────────────────────────────────────────────────────
+  - code: "FP03-01-01-0010"
+    name: 보통주자본금
+    type: equity
+    required: all
+
+  - code: "FP03-03-01-0070"
+    name: 기타자본조정
+    type: equity
+    required: all
+
+  - code: "FP03-05-01-0060"
+    name: 미처분이익잉여금_전기이월잉여금
+    type: equity
+    required: all
+
+  - code: "FP03-05-01-0070"
+    name: 미처분이익잉여금_당기순손익
+    type: equity
+    required: all
+
+  # ── 매출 ──────────────────────────────────────────────────────
+  - code: "PL01-01-0010"
+    name: 본사상품매출액
+    type: revenue
+    required: trading
+
+  - code: "PL01-01-0020"
+    name: 본사제품매출액
+    type: revenue
+    required: trading
+
+  - code: "PL01-01-0030"
+    name: 미국제품매출액
+    type: revenue
+    required: trading
+
+  - code: "PL01-01-0040"
+    name: 현지매입상품매출액
+    type: revenue
+    required: trading
+
+  - code: "PL01-01-0050"
+    name: 기타관계사제품매출액
+    type: revenue
+    required: trading
+
+  # ── 매출원가 ──────────────────────────────────────────────────
+  - code: "PL02-01-0010"
+    name: 본사상품매출원가
+    type: expense
+    required: trading
+
+  - code: "PL02-01-0020"
+    name: 본사제품매출원가
+    type: expense
+    required: trading
+
+  - code: "PL02-01-0030"
+    name: 미국제품매출원가
+    type: expense
+    required: trading
+
+  # ── 판매비와관리비 ────────────────────────────────────────────
+  - code: "PL04-00-0010"
+    name: 급여
+    type: expense
+    required: all
+
+  - code: "PL04-00-0020"
+    name: 상여금
+    type: expense
+    required: all
+
+  - code: "PL04-00-0050"
+    name: 복리후생비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0070"
+    name: 여비교통비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0090"
+    name: 소모품비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0110"
+    name: 운반비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0120"
+    name: 통신비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0130"
+    name: 수도광열비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0140"
+    name: 임차료
+    type: expense
+    required: all
+
+  - code: "PL04-00-0150"
+    name: 보험료
+    type: expense
+    required: all
+
+  - code: "PL04-00-0170"
+    name: 차량유지비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0180"
+    name: 감가상각비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0190"
+    name: 리스자산상각비
+    type: expense
+    required: all
+    ifrs: IFRS16
+
+  - code: "PL04-00-0200"
+    name: 무형자산상각비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0210"
+    name: 광고선전비
+    type: expense
+    required: all
+
+  - code: "PL04-00-0230"
+    name: 세금과공과
+    type: expense
+    required: all
+
+  - code: "PL04-00-0240"
+    name: 지급수수료
+    type: expense
+    required: all
+
+  - code: "PL04-00-0290"
+    name: 대손상각비
+    type: expense
+    required: all
+    provision: true
+    provision_type: allowance_for_doubtful
+
+  # ── 영업외수익 ────────────────────────────────────────────────
+  - code: "PL06-00-0050"
+    name: 외화환산이익
+    type: revenue
+    required: all
+
+  - code: "PL06-00-0280"
+    name: 잡이익
+    type: revenue
+    required: all
+
+  # ── 영업외비용 ────────────────────────────────────────────────
+  - code: "PL07-00-0010"
+    name: 이자비용
+    type: expense
+    required: all
+
+  - code: "PL07-00-0030"
+    name: 외환차손
+    type: expense
+    required: all
+
+  - code: "PL07-00-0040"
+    name: 외화환산손실
+    type: expense
+    required: all
+
+  - code: "PL07-00-0260"
+    name: 잡손실
+    type: expense
+    required: all
+
+  # ── 법인세 ────────────────────────────────────────────────────
+  - code: "PL09-00-0010"
+    name: 법인세비용
+    type: expense
+    required: all
