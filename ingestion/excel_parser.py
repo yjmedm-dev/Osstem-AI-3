@@ -1,7 +1,6 @@
 from pathlib import Path
 import pandas as pd
 from models.trial_balance import TrialBalance, TrialBalanceRow
-from utils.currency import convert
 from utils.exceptions import InvalidFileFormatError
 from ingestion.schema_mapper import map_columns
 
@@ -85,20 +84,21 @@ def parse_excel(
 def parse_uz01_excel(
     file_path: Path,
     period: str,
-    exchange_rate: float | None = None,
+    exchange_rate: float | None = None,  # 현재 미사용 — UZS 그대로 검증
 ) -> TrialBalance:
     """우즈베키스탄(UZ01) 마감자료 엑셀 → TrialBalance.
 
     '전체' 시트를 파싱하여 한국 신계정 코드 기준으로 집계한다.
-    차변·대변은 기말잔액(신계정별 합산)을 사용한다.
+    차변·대변은 기말잔액(신계정별 합산)을 UZS 그대로 사용한다.
+    KRW 환산은 하지 않는다.
 
     Args:
         file_path: 우즈벡 마감자료 엑셀 경로
         period: 기간 문자열 (예: "2026-02")
-        exchange_rate: 1 UZS → KRW 환율 (None이면 폴백 0.106 사용)
+        exchange_rate: 미사용 (향후 연결 보고서 환산 시 활용 예정)
 
     Returns:
-        TrialBalance (debit/credit 단위: KRW)
+        TrialBalance (debit/credit 단위: UZS)
     """
     try:
         raw = pd.read_excel(file_path, sheet_name="전체", header=4)
@@ -147,21 +147,19 @@ def parse_uz01_excel(
 
     rows: list[TrialBalanceRow] = []
     for _, row in grouped.iterrows():
-        debit_krw  = convert(row["debit_uzs"],  "UZS", exchange_rate)
-        credit_krw = convert(row["credit_uzs"], "UZS", exchange_rate)
-        uzs_net = row["debit_uzs"] - row["credit_uzs"]
-        uzs_rate = exchange_rate if exchange_rate is not None else 0.106
+        debit_uzs  = float(row["debit_uzs"])
+        credit_uzs = float(row["credit_uzs"])
 
         rows.append(TrialBalanceRow(
             subsidiary_code="UZ01",
             period=period,
             account_code=str(row["std_account_code"]).strip(),
             account_name=str(row["account_name"]).strip(),
-            debit=debit_krw,
-            credit=credit_krw,
-            original_amount=uzs_net,
+            debit=debit_uzs,
+            credit=credit_uzs,
+            original_amount=debit_uzs - credit_uzs,
             original_currency="UZS",
-            exchange_rate=uzs_rate,
+            exchange_rate=1.0,  # 환산 없음 — UZS 그대로
         ))
 
     return TrialBalance(
