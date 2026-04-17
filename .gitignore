@@ -47,3 +47,6 @@ htmlcov/
 # 임시 파일
 *.tmp
 *.bak
+
+# 벡터 DB (재생성 가능)
+data/vector_db/
