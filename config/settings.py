@@ -31,3 +31,10 @@ SUBSIDIARY_CODES = [
 
 # 퇴직급여충당금 의무 적용 법인 (국가별 법령 기준)
 RETIREMENT_MANDATORY_SUBSIDIARIES = ["KR01", "JP01", "IN01"]
+
+# MySQL 접속 정보 (3-system reconciliation용)
+MYSQL_HOST     = os.getenv("MYSQL_HOST",     "10.190.6.111")
+MYSQL_PORT     = int(os.getenv("MYSQL_PORT", "5010"))
+MYSQL_USER     = os.getenv("MYSQL_USER",     "yeji")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "yeji1234")
+MYSQL_DB       = os.getenv("MYSQL_DB",       "yeji")

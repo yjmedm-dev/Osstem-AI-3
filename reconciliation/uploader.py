@@ -1,0 +1,379 @@
+"""현지회계프로그램 / 네트라 엑셀 → MySQL 업로드 파이프라인
+
+네트라 업로드 방식:
+  네트라는 개별 계정코드 없이 5개 항목(매출채권/선수금/원가/재고자산/매출액) 합계만 제공.
+  업로드 방식 2가지:
+  1. 엑셀 파일: 첫 열=항목명, 둘째 열=금액 (다른 열은 통화/환율/원화금액)
+  2. 직접 입력: upload_netra_direct(corp, period, {항목: 금액}) 호출
+"""
+from datetime import datetime
+from pathlib import Path
+from typing import Literal
+
+import pandas as pd
+from sqlalchemy import delete, select
+
+from db.connection import get_session
+from db.models import FinancialLocal, FinancialNetra, UploadLog
+from reconciliation.master_table import NETRA_CATEGORIES
+
+# 네트라 엑셀에서 항목 열/금액 열로 인식하는 헤더명
+_NETRA_ITEM_COL  = ["항목", "item", "category", "구분", "계정"]
+_NETRA_AMT_COL   = ["금액", "amount", "잔액", "balance"]
+_NETRA_KRW_COL   = ["원화금액", "amount_krw", "원화환산액", "원화잔액"]
+_NETRA_CURR_COL  = ["통화", "currency"]
+_NETRA_RATE_COL  = ["환율", "exchange_rate"]
+
+# 현지회계 엑셀 컬럼 매핑 (법인별 상이할 수 있음)
+_LOCAL_COLUMN_MAP = {
+    "account_code":  "account_code",
+    "account_name":  "account_name",
+    "debit":         "debit",
+    "credit":        "credit",
+    "balance":       "balance",
+    "currency":      "currency",
+    "exchange_rate": "exchange_rate",
+    "amount_krw":    "amount_krw",
+    # 한글
+    "계정코드":       "account_code",
+    "계정과목코드":    "account_code",
+    "계정명":         "account_name",
+    "계정과목명":      "account_name",
+    "차변":           "debit",
+    "대변":           "credit",
+    "잔액":           "balance",
+    "통화":           "currency",
+    "환율":           "exchange_rate",
+    "원화금액":        "amount_krw",
+    # 러시아어/우즈벡 헤더 (1C 직접 출력)
+    "Счет":          "account_code",
+    "Субконто":      "account_name",
+    "Дебет":         "debit",
+    "Кредит":        "credit",
+}
+
+
+def _read_excel(filepath: str | Path, col_map: dict, sheet: str | int = 0) -> pd.DataFrame:
+    df = pd.read_excel(filepath, sheet_name=sheet, dtype=str).fillna("")
+    df.columns = [c.strip() for c in df.columns]
+    df = df.rename(columns=col_map)
+    return df
+
+
+def _to_float(val) -> float:
+    try:
+        return float(str(val).replace(",", "").strip())
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _detect_level(code: str) -> int:
+    """계정코드 → 레벨 분류.
+    Lv3: 소수점 포함 (예: 0120.2, 4410.1)
+    Lv1: 끝 2자리가 '00' (예: 0100, 1000, 5000)
+    Lv2: 그 외 4자리 (예: 0120, 5010, 4010)
+    """
+    s = str(code).strip()
+    if '.' in s:
+        return 3
+    digits = s.replace(' ', '')
+    if len(digits) >= 2 and digits[-2:] == '00':
+        return 1
+    return 2
+
+
+def _build_rows(df: pd.DataFrame, subsidiary_code: str, period: str, model_cls):
+    """DataFrame → ORM 객체 리스트 변환"""
+    rows = []
+    for _, r in df.iterrows():
+        acc_code = str(r.get("account_code", "")).strip()
+        if not acc_code:
+            continue
+
+        debit  = _to_float(r.get("debit",  0))
+        credit = _to_float(r.get("credit", 0))
+
+        # balance 컬럼이 있으면 우선 사용, 없으면 차변-대변 계산
+        if "balance" in r and str(r["balance"]).strip():
+            balance = _to_float(r.get("balance"))
+        else:
+            balance = debit - credit
+
+        # 원화 금액: amount_krw 컬럼 있으면 사용, 없으면 balance 사용
+        if "amount_krw" in r and str(r["amount_krw"]).strip():
+            amount_krw = _to_float(r.get("amount_krw"))
+        else:
+            amount_krw = balance
+
+        extra = {}
+        if hasattr(model_cls, "local_level"):
+            extra["local_level"] = _detect_level(acc_code)
+
+        rows.append(model_cls(
+            subsidiary_code=subsidiary_code,
+            period=period,
+            account_code=acc_code,
+            account_name=str(r.get("account_name", "")).strip() or None,
+            debit=debit,
+            credit=credit,
+            balance=balance,
+            currency=str(r.get("currency", "")).strip() or None,
+            exchange_rate=_to_float(r.get("exchange_rate", 0)) or None,
+            amount_krw=amount_krw,
+            uploaded_at=datetime.utcnow(),
+            **extra,
+        ))
+    return rows
+
+
+def _upload(
+    system: Literal["local", "netra"],
+    filepath: str | Path,
+    subsidiary_code: str,
+    period: str,
+    col_map: dict,
+    model_cls,
+    sheet: str | int = 0,
+) -> dict:
+    """공통 업로드 로직"""
+    subsidiary_code = subsidiary_code.upper()
+    filepath = Path(filepath)
+
+    try:
+        df = _read_excel(filepath, col_map, sheet)
+        orm_rows = _build_rows(df, subsidiary_code, period, model_cls)
+
+        if not orm_rows:
+            return {"status": "error", "message": "유효한 데이터 행이 없습니다."}
+
+        total_debit  = sum(float(r.debit or 0)  for r in orm_rows)
+        total_credit = sum(float(r.credit or 0) for r in orm_rows)
+        is_balanced  = abs(total_debit - total_credit) < 1.0
+
+        with get_session() as session:
+            # 기존 데이터 삭제 (동일 법인·기간 재업로드 지원)
+            session.execute(
+                delete(model_cls).where(
+                    model_cls.subsidiary_code == subsidiary_code,
+                    model_cls.period == period,
+                )
+            )
+            session.add_all(orm_rows)
+
+            # 업로드 이력 기록
+            session.add(UploadLog(
+                system_name=system,
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="success",
+                row_count=len(orm_rows),
+                total_debit=total_debit,
+                total_credit=total_credit,
+                is_balanced=is_balanced,
+                message=f"파일: {filepath.name}",
+            ))
+
+        return {
+            "status": "success",
+            "row_count": len(orm_rows),
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "is_balanced": is_balanced,
+        }
+
+    except Exception as e:
+        with get_session() as session:
+            session.add(UploadLog(
+                system_name=system,
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="error",
+                message=str(e),
+            ))
+        return {"status": "error", "message": str(e)}
+
+
+def upload_local(
+    subsidiary_code: str,
+    period: str,
+    filepath: str | Path,
+    sheet: str | int = 0,
+) -> dict:
+    """현지회계프로그램 엑셀 → financial_local 테이블 업로드"""
+    return _upload("local", filepath, subsidiary_code, period,
+                   _LOCAL_COLUMN_MAP, FinancialLocal, sheet)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 네트라 — 5개 항목 합계 업로드
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    """대소문자·공백 무시해서 후보 헤더 중 첫 번째 일치하는 열명 반환"""
+    normalized = {c.strip().lower(): c for c in df.columns}
+    for cand in candidates:
+        if cand.strip().lower() in normalized:
+            return normalized[cand.strip().lower()]
+    return None
+
+
+def upload_netra(
+    subsidiary_code: str,
+    period: str,
+    filepath: str | Path,
+    sheet: str | int = 0,
+) -> dict:
+    """네트라 엑셀 → financial_netra 테이블 업로드 (5개 항목 합계 방식)
+
+    엑셀 형식 (첫 열: 항목명, 둘째 열~: 금액/통화/환율/원화금액):
+    ┌──────────┬───────────┬──────┬──────┬───────────┐
+    │ 항목     │ 금액      │ 통화 │ 환율 │ 원화금액  │
+    ├──────────┼───────────┼──────┼──────┼───────────┤
+    │ 매출채권 │ 1,234,567 │ UZS  │ 0.11 │ 135,802   │
+    │ 선수금   │   234,567 │ UZS  │ 0.11 │  25,802   │
+    │ 원가     │ 3,456,789 │ UZS  │ 0.11 │ 380,247   │
+    │ 재고자산 │ 5,678,901 │ UZS  │ 0.11 │ 624,679   │
+    │ 매출액   │12,345,678 │ UZS  │ 0.11 │1,358,025  │
+    └──────────┴───────────┴──────┴──────┴───────────┘
+    """
+    subsidiary_code = subsidiary_code.upper()
+    filepath = Path(filepath)
+
+    try:
+        df = pd.read_excel(filepath, sheet_name=sheet, dtype=str).fillna("")
+        df.columns = [c.strip() for c in df.columns]
+
+        item_col = _find_col(df, _NETRA_ITEM_COL)
+        amt_col  = _find_col(df, _NETRA_AMT_COL)
+        krw_col  = _find_col(df, _NETRA_KRW_COL)
+        curr_col = _find_col(df, _NETRA_CURR_COL)
+        rate_col = _find_col(df, _NETRA_RATE_COL)
+
+        # 첫 열을 항목, 둘째 열을 금액으로 fallback
+        if item_col is None:
+            item_col = df.columns[0]
+        if amt_col is None and len(df.columns) > 1:
+            amt_col = df.columns[1]
+
+        orm_rows = []
+        for _, row in df.iterrows():
+            category = str(row[item_col]).strip()
+            if category not in NETRA_CATEGORIES:
+                continue
+
+            amount     = _to_float(row.get(amt_col, 0) if amt_col else 0)
+            amount_krw = _to_float(row.get(krw_col, 0) if krw_col else amount)
+            currency   = str(row.get(curr_col, "")).strip() if curr_col else None
+            rate       = _to_float(row.get(rate_col, 0)) if rate_col else None
+
+            orm_rows.append(FinancialNetra(
+                subsidiary_code=subsidiary_code,
+                period=period,
+                category=category,
+                amount=amount,
+                currency=currency or None,
+                exchange_rate=rate or None,
+                amount_krw=amount_krw,
+                uploaded_at=datetime.utcnow(),
+            ))
+
+        if not orm_rows:
+            return {
+                "status": "error",
+                "message": (
+                    f"항목명이 일치하지 않습니다. "
+                    f"첫 열에 {NETRA_CATEGORIES} 중 하나가 있어야 합니다."
+                ),
+            }
+
+        with get_session() as session:
+            session.execute(
+                delete(FinancialNetra).where(
+                    FinancialNetra.subsidiary_code == subsidiary_code,
+                    FinancialNetra.period == period,
+                )
+            )
+            session.add_all(orm_rows)
+            session.add(UploadLog(
+                system_name="netra",
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="success",
+                row_count=len(orm_rows),
+                message=f"파일: {filepath.name}",
+            ))
+
+        return {"status": "success", "row_count": len(orm_rows),
+                "categories": [r.category for r in orm_rows]}
+
+    except Exception as e:
+        with get_session() as session:
+            session.add(UploadLog(
+                system_name="netra",
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="error",
+                message=str(e),
+            ))
+        return {"status": "error", "message": str(e)}
+
+
+def upload_netra_direct(
+    subsidiary_code: str,
+    period: str,
+    data: dict,
+    currency: str = "KRW",
+    exchange_rate: float | None = None,
+) -> dict:
+    """네트라 데이터를 직접 dict로 입력한다.
+
+    Args:
+        data: {항목명: 금액} — 예) {"매출채권": 1234567, "매출액": 5000000}
+        currency: 원본 통화 (기본 KRW — 원화이면 amount_krw = amount)
+        exchange_rate: 환율 (KRW이면 1.0)
+    """
+    subsidiary_code = subsidiary_code.upper()
+    rate = exchange_rate or 1.0
+
+    try:
+        orm_rows = []
+        for cat, amt in data.items():
+            cat = cat.strip()
+            if cat not in NETRA_CATEGORIES:
+                continue
+            amount = float(amt)
+            orm_rows.append(FinancialNetra(
+                subsidiary_code=subsidiary_code,
+                period=period,
+                category=cat,
+                amount=amount,
+                currency=currency,
+                exchange_rate=rate,
+                amount_krw=amount * rate,
+                uploaded_at=datetime.utcnow(),
+            ))
+
+        if not orm_rows:
+            return {"status": "error", "message": "유효한 항목이 없습니다."}
+
+        with get_session() as session:
+            session.execute(
+                delete(FinancialNetra).where(
+                    FinancialNetra.subsidiary_code == subsidiary_code,
+                    FinancialNetra.period == period,
+                )
+            )
+            session.add_all(orm_rows)
+            session.add(UploadLog(
+                system_name="netra",
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="success",
+                row_count=len(orm_rows),
+                message="직접입력",
+            ))
+
+        return {"status": "success", "row_count": len(orm_rows)}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
