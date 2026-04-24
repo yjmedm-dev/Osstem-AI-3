@@ -36,20 +36,21 @@ def init_db():
     from db.models import Base
 
     if not test_connection():
-        console.print("[red]✗ MySQL 연결 실패. 접속 정보를 확인하세요.[/red]")
+        console.print("[red]X MySQL 연결 실패. 접속 정보를 확인하세요.[/red]")
         return
 
     try:
         Base.metadata.create_all(get_engine())
-        console.print("[green]✔ 테이블 생성 완료 (account_master / financial_local / financial_netra / upload_log)[/green]")
+        console.print("[green]OK 테이블 생성 완료 (account_master / financial_local / financial_netra / upload_log)[/green]")
     except Exception as e:
-        console.print(f"[red]✗ 테이블 생성 실패: {e}[/red]")
+        console.print(f"[red]X 테이블 생성 실패: {e}[/red]")
 
 
 @recon.command("master-import")
 @click.option("--file",  "filepath", required=True, help="계정 마스터 엑셀 파일 경로")
-@click.option("--sheet", default=0,  help="시트 번호 또는 이름 (기본: 0)")
+@click.option("--sheet", default="0", help="시트 번호 또는 이름 (기본: 0)")
 def master_import(filepath, sheet):
+    sheet = int(sheet) if sheet.isdigit() else sheet
     """계정과목 마스터(3-시스템 매핑)를 엑셀에서 DB로 임포트합니다.
 
     \b
@@ -60,14 +61,14 @@ def master_import(filepath, sheet):
     from db.connection import test_connection
 
     if not test_connection():
-        console.print("[red]✗ MySQL 연결 실패. 접속 정보를 확인하세요.[/red]")
+        console.print("[red]X MySQL 연결 실패. 접속 정보를 확인하세요.[/red]")
         return
 
     try:
         count = import_from_excel(filepath, sheet)
-        console.print(f"[green]✔ 계정 마스터 {count}건 임포트 완료[/green]")
+        console.print(f"[green]OK 계정 마스터 {count}건 임포트 완료[/green]")
     except Exception as e:
-        console.print(f"[red]✗ 임포트 실패: {e}[/red]")
+        console.print(f"[red]X 임포트 실패: {e}[/red]")
 
 
 @recon.command("master-list")
@@ -78,7 +79,7 @@ def master_list(corp):
 
     rows = list_masters(corp)
     if not rows:
-        console.print("[yellow]⚠ 마스터 데이터가 없습니다.[/yellow]")
+        console.print("[yellow]! 마스터 데이터가 없습니다.[/yellow]")
         return
 
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan")
@@ -142,10 +143,10 @@ def verify(corp, period):
         info  = result[system]
 
         if not info["uploaded"]:
-            console.print(f"[red]✗ {label}: 업로드 데이터 없음[/red]")
+            console.print(f"[red]X {label}: 업로드 데이터 없음[/red]")
             continue
 
-        balanced_icon = "[green]✔[/green]" if info["is_balanced"] else "[red]✗[/red]"
+        balanced_icon = "[green]OK[/green]" if info["is_balanced"] else "[red]X[/red]"
         console.print(
             f"{balanced_icon} [bold]{label}[/bold]  "
             f"행: {info['row_count']:,}  "
@@ -155,7 +156,7 @@ def verify(corp, period):
         )
         if info["missing_accounts"]:
             console.print(
-                f"  [yellow]⚠ 마스터 대비 누락 계정 {len(info['missing_accounts'])}건: "
+                f"  [yellow]! 마스터 대비 누락 계정 {len(info['missing_accounts'])}건: "
                 f"{', '.join(info['missing_accounts'][:5])}"
                 + (" ..." if len(info['missing_accounts']) > 5 else "") + "[/yellow]"
             )
@@ -213,14 +214,14 @@ def upload_netra_direct(corp, period, receivable, advance, cogs, inventory, reve
     if revenue    is not None: data["매출액"]   = revenue
 
     if not data:
-        console.print("[red]✗ 최소 1개 항목 금액을 입력하세요.[/red]")
+        console.print("[red]X 최소 1개 항목 금액을 입력하세요.[/red]")
         return
 
     result = _upload(corp, period, data, currency, rate)
     if result["status"] == "success":
-        console.print(f"[green]✔ 네트라 직접입력 완료 ({result['row_count']}개 항목)[/green]")
+        console.print(f"[green]OK 네트라 직접입력 완료 ({result['row_count']}개 항목)[/green]")
     else:
-        console.print(f"[red]✗ 실패: {result['message']}[/red]")
+        console.print(f"[red]X 실패: {result['message']}[/red]")
 
 
 @recon.command("compare")
@@ -234,7 +235,7 @@ def compare(corp, period, detail):
     rows = _compare(corp, period)
 
     if not rows:
-        console.print("[yellow]⚠ 비교할 데이터가 없습니다.[/yellow]")
+        console.print("[yellow]! 비교할 데이터가 없습니다.[/yellow]")
         console.print("  1) recon master-import — 계정 마스터에 네트라 항목 설정 확인")
         console.print("  2) recon upload-local   — 현지회계 데이터 업로드")
         console.print("  3) recon upload-netra   또는 upload-netra-direct — 네트라 데이터 입력")
@@ -296,7 +297,7 @@ def list_local(corp, period, limit, level, excel_path):
     data = _list(corp, period, limit, level=level_int)
 
     if not data["rows"]:
-        console.print("[yellow]⚠ 업로드된 데이터가 없습니다.[/yellow]")
+        console.print("[yellow]! 업로드된 데이터가 없습니다.[/yellow]")
         return
 
     is_ok = data["is_balanced"]
@@ -355,7 +356,7 @@ def list_local(corp, period, limit, level, excel_path):
     if excel_path:
         from reconciliation.viewer import export_local_excel
         cnt = export_local_excel(corp, period, excel_path)
-        console.print(f"[green]✔ 엑셀 저장: {excel_path}  ({cnt}행)[/green]")
+        console.print(f"[green]OK 엑셀 저장: {excel_path}  ({cnt}행)[/green]")
 
 
 @recon.command("list-netra")
@@ -368,7 +369,7 @@ def list_netra(corp, period):
     data = _list(corp, period)
 
     if not data["rows"]:
-        console.print("[yellow]⚠ 네트라 데이터가 없습니다.[/yellow]")
+        console.print("[yellow]! 네트라 데이터가 없습니다.[/yellow]")
         return
 
     console.print(f"\n[bold]{corp} {period} 네트라 데이터[/bold]\n")
@@ -411,18 +412,18 @@ def export_confinas(corp, period, out_filepath):
     try:
         count = _export(corp, period, out_filepath)
         console.print(
-            f"[green]✔ Confinas 엑셀 생성 완료: {out_filepath}  ({count}개 계정)[/green]"
+            f"[green]OK Confinas 엑셀 생성 완료: {out_filepath}  ({count}개 계정)[/green]"
         )
     except Exception as e:
-        console.print(f"[red]✗ 생성 실패: {e}[/red]")
+        console.print(f"[red]X 생성 실패: {e}[/red]")
 
 
 def _print_upload_result(result: dict) -> None:
     if result["status"] == "success":
         is_bal  = result.get("is_balanced", True)
-        bal_txt = "[green]대차균형 OK[/green]" if is_bal else "[red]대차균형 NG ⚠[/red]"
+        bal_txt = "[green]대차균형 OK[/green]" if is_bal else "[red]대차균형 NG ![/red]"
         console.print(
-            f"[green]✔ 업로드 완료[/green]  "
+            f"[green]OK 업로드 완료[/green]  "
             f"행: {result['row_count']:,}  "
             f"차변합: {result.get('total_debit', 0):,.0f}  "
             f"대변합: {result.get('total_credit', 0):,.0f}  "
@@ -430,7 +431,7 @@ def _print_upload_result(result: dict) -> None:
         )
         console.print("[dim]  (확인) recon list-local --corp ... --period ...[/dim]")
     else:
-        console.print(f"[red]✗ 업로드 실패: {result['message']}[/red]")
+        console.print(f"[red]X 업로드 실패: {result['message']}[/red]")
 
 
 @cli.command("validate")
@@ -465,13 +466,13 @@ def validate(corp, period, source, sheet,
     onec_client = None
     if source == "1c":
         if not all([onec_url, onec_user, onec_pass]):
-            console.print("[red]✗ --1c-url, --1c-user, --1c-pass 옵션이 필요합니다.[/red]")
+            console.print("[red]X --1c-url, --1c-user, --1c-pass 옵션이 필요합니다.[/red]")
             return
         onec_client = OneCODataClient(onec_url, onec_user, onec_pass)
         if not onec_client.test_connection():
-            console.print(f"[red]✗ 1C 서버 연결 실패: {onec_url}[/red]")
+            console.print(f"[red]X 1C 서버 연결 실패: {onec_url}[/red]")
             return
-        console.print(f"[green]✔ 1C 연결 성공: {onec_url}[/green]")
+        console.print(f"[green]OK 1C 연결 성공: {onec_url}[/green]")
 
     for code in targets:
         console.print(f"\n[bold cyan]▶ {code}  {period}  [{source.upper()}][/bold cyan]")
@@ -480,7 +481,7 @@ def validate(corp, period, source, sheet,
             if source == "excel":
                 pattern = list(DATA_INPUT_DIR.glob(f"{code}*{period}*.xlsx"))
                 if not pattern:
-                    console.print(f"[yellow]⚠ 파일을 찾을 수 없습니다: {DATA_INPUT_DIR}/{code}*{period}*.xlsx[/yellow]")
+                    console.print(f"[yellow]! 파일을 찾을 수 없습니다: {DATA_INPUT_DIR}/{code}*{period}*.xlsx[/yellow]")
                     continue
                 tb = parse_excel(pattern[0], code, period, sheet_name=sheet)
                 tb = normalize(tb)
@@ -496,7 +497,7 @@ def validate(corp, period, source, sheet,
             result = engine.run(tb)
 
         except OsstemBaseError as e:
-            console.print(f"[red]✗ 처리 실패: {e}[/red]")
+            console.print(f"[red]X 처리 실패: {e}[/red]")
             continue
 
         _print_result(result)
@@ -515,14 +516,14 @@ def list_orgs(onec_url, onec_user, onec_pass):
         for org in orgs:
             console.print(f"  • {org}")
     except OsstemBaseError as e:
-        console.print(f"[red]✗ {e}[/red]")
+        console.print(f"[red]X {e}[/red]")
 
 
 def _print_result(result) -> None:
     summary = result.summary()
 
     if result.is_clean:
-        console.print("[green]✔ 검증 통과 — 이슈 없음[/green]")
+        console.print("[green]OK 검증 통과 — 이슈 없음[/green]")
         return
 
     # 요약 배너

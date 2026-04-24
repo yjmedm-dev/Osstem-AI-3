@@ -193,15 +193,140 @@ def _upload(
         return {"status": "error", "message": str(e)}
 
 
+def _parse_1c_tb(filepath: str | Path, sheet: str | int = 0) -> pd.DataFrame:
+    """1C:Enterprise 잔액시산표 형식 파싱.
+
+    파일 구조:
+      Row 0~7: 타이틀/헤더 (스킵)
+      Col 0 : "계정코드, 계정명" (쉼표 구분)
+      Col 1 : 통화
+      Col 2 : 기초잔액 차변  Col 3: 기초잔액 대변
+      Col 4 : 당기 차변      Col 5: 당기 대변
+      Col 7 : 기말잔액 차변  Col 8: 기말잔액 대변
+    """
+    import re
+    df_raw = pd.read_excel(filepath, sheet_name=sheet, header=None, dtype=str).fillna("")
+
+    records = []
+    for _, row in df_raw.iterrows():
+        cell0 = str(row.iloc[0]).strip()
+        if not cell0 or cell0 == "nan":
+            continue
+        if "," not in cell0:
+            continue
+
+        code_part = cell0.split(",")[0].strip()
+        name_part = cell0.split(",", 1)[1].strip()
+
+        # 숫자 + 소수점으로만 이루어진 코드만 취급
+        if not re.match(r"^\d+(\.\d+)?$", code_part):
+            continue
+
+        # 통화 컬럼 처리
+        currency = str(row.iloc[1]).strip() if len(row) > 1 else ""
+        # нат. = натуральный (수량 단위) — 금액 행 아님, 스킵
+        if currency.startswith("нат"):
+            continue
+        # БУ = Бухгалтерский учет (회계장부 보고통화) → UZS로 대체
+        if not currency or currency == "nan" or currency == "БУ":
+            currency = "UZS"
+
+        debit  = _to_float(row.iloc[7]) if len(row) > 7 else 0.0
+        credit = _to_float(row.iloc[8]) if len(row) > 8 else 0.0
+
+        records.append({
+            "account_code":  code_part,
+            "account_name":  name_part,
+            "debit":         debit,
+            "credit":        credit,
+            "balance":       debit - credit,
+            "currency":      currency,
+            "exchange_rate": "",
+            "amount_krw":    debit - credit,  # 환율 미적용, UZS 원화 그대로
+        })
+
+    return pd.DataFrame(records)
+
+
+def _is_1c_format(filepath: str | Path, sheet: str | int = 0) -> bool:
+    """파일 첫 컬럼이 '코드, 이름' 패턴이면 1C 형식으로 판단."""
+    import re
+    try:
+        df = pd.read_excel(filepath, sheet_name=sheet, header=None, dtype=str, nrows=15).fillna("")
+        for _, row in df.iterrows():
+            cell = str(row.iloc[0]).strip()
+            if re.match(r"^\d+(\.\d+)?,", cell):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def upload_local(
     subsidiary_code: str,
     period: str,
     filepath: str | Path,
     sheet: str | int = 0,
 ) -> dict:
-    """현지회계프로그램 엑셀 → financial_local 테이블 업로드"""
-    return _upload("local", filepath, subsidiary_code, period,
-                   _LOCAL_COLUMN_MAP, FinancialLocal, sheet)
+    """현지회계프로그램 엑셀 → financial_local 테이블 업로드
+    1C:Enterprise 잔액시산표 형식 자동 감지 후 파싱.
+    """
+    filepath = Path(filepath)
+    subsidiary_code = subsidiary_code.upper()
+
+    try:
+        if _is_1c_format(filepath, sheet):
+            df = _parse_1c_tb(filepath, sheet)
+        else:
+            df = _read_excel(filepath, _LOCAL_COLUMN_MAP, sheet)
+
+        orm_rows = _build_rows(df, subsidiary_code, period, FinancialLocal)
+
+        if not orm_rows:
+            return {"status": "error", "message": "유효한 데이터 행이 없습니다."}
+
+        total_debit  = sum(float(r.debit  or 0) for r in orm_rows)
+        total_credit = sum(float(r.credit or 0) for r in orm_rows)
+        is_balanced  = abs(total_debit - total_credit) < 1.0
+
+        with get_session() as session:
+            session.execute(
+                delete(FinancialLocal).where(
+                    FinancialLocal.subsidiary_code == subsidiary_code,
+                    FinancialLocal.period == period,
+                )
+            )
+            session.add_all(orm_rows)
+            session.add(UploadLog(
+                system_name="local",
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="success",
+                row_count=len(orm_rows),
+                total_debit=total_debit,
+                total_credit=total_credit,
+                is_balanced=is_balanced,
+                message=f"파일: {filepath.name}",
+            ))
+
+        return {
+            "status": "success",
+            "row_count": len(orm_rows),
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "is_balanced": is_balanced,
+        }
+
+    except Exception as e:
+        with get_session() as session:
+            session.add(UploadLog(
+                system_name="local",
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="error",
+                message=str(e),
+            ))
+        return {"status": "error", "message": str(e)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

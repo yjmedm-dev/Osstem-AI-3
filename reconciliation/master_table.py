@@ -48,11 +48,12 @@ def import_from_excel(filepath: str | Path, sheet: str | int = 0) -> int:
     Returns:
         삽입/갱신된 행 수
     """
-    df = pd.read_excel(filepath, sheet_name=sheet, dtype=str).fillna("")
+    df = pd.read_excel(filepath, sheet_name=sheet, header=1, dtype=str).fillna("")
 
-    # 컬럼명 정규화
+    # 컬럼명 정규화 (대소문자·공백 무시하여 매핑)
+    normalized_map = {k.strip().lower(): v for k, v in _COLUMN_MAP.items()}
     df.columns = [c.strip() for c in df.columns]
-    df = df.rename(columns=_COLUMN_MAP)
+    df = df.rename(columns=lambda c: normalized_map.get(c.strip().lower(), c))
 
     missing = [f for f in _REQUIRED_FIELDS if f not in df.columns]
     if missing:
