@@ -12,6 +12,14 @@ from db.models import AccountMaster
 # 네트라 대사 가능 5개 항목 (category 컬럼에 저장되는 값)
 NETRA_CATEGORIES = ["매출채권", "선수금", "원가", "재고자산", "매출액"]
 
+NETRA_STEP1_VALUES = [
+    "(HQ) PRODUCT",
+    "(KR) MERCHANDISE",
+    "(US) PRODUCT",
+    "(Relative) PRODUCT",
+    "(Domestic) MERCHANDISE",
+]
+
 _COLUMN_MAP = {
     "subsidiary_code":  "subsidiary_code",
     "법인코드":           "subsidiary_code",
@@ -85,7 +93,7 @@ def import_from_excel(filepath: str | Path, sheet: str | int = 0) -> int:
 
             netra_cat = str(row.get("netra_category", "")).strip()
             if netra_cat and netra_cat not in NETRA_CATEGORIES:
-                netra_cat = ""  # 유효하지 않은 값은 무시
+                netra_cat = ""
 
             obj.local_name      = str(row.get("local_name",    "")).strip() or None
             obj.netra_category  = netra_cat or None

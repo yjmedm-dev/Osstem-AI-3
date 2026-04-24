@@ -60,6 +60,7 @@ class FinancialNetra(Base):
     subsidiary_code = Column(String(10),  nullable=False, index=True)
     period          = Column(String(7),   nullable=False, index=True)
     category        = Column(String(20),  nullable=False)  # 5개 항목명
+    step1           = Column(String(50),  nullable=True)   # STEP1 구분 (선택)
     amount          = Column(Numeric(20, 2), default=0)    # 현지통화 금액
     currency        = Column(String(10),  nullable=True)
     exchange_rate   = Column(Numeric(15, 6), nullable=True)

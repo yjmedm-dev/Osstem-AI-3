@@ -8,6 +8,9 @@ from reconciliation.master_table import NETRA_CATEGORIES
 _DIFF_RATE_THRESHOLD   = 0.01       # 1% 초과 시 하이라이트
 _DIFF_AMOUNT_THRESHOLD = 1_000_000  # 100만원 초과 시 하이라이트
 
+# 현지회계에서 대변잔액(음수)으로 기록되는 카테고리 — 비교 시 부호 반전
+_CREDIT_CATEGORIES = {"매출액", "선수금"}
+
 
 def compare(subsidiary_code: str, period: str) -> list[dict]:
     """로컬 계정을 netra_category로 집계하고 네트라 합계와 비교한다.
@@ -67,11 +70,10 @@ def compare(subsidiary_code: str, period: str) -> list[dict]:
         if m.local_code
     }
 
-    # 네트라: category → 원화금액
-    netra_totals: dict[str, float] = {
-        r.category: float(r.amount_krw or 0)
-        for r in netra_rows
-    }
+    # 네트라: category → 원화금액 합계 (STEP1별 여러 행을 category 기준으로 합산)
+    netra_totals: dict[str, float] = {}
+    for r in netra_rows:
+        netra_totals[r.category] = netra_totals.get(r.category, 0.0) + float(r.amount_krw or 0)
 
     # category별 현지 계정 집계
     category_local: dict[str, list] = {cat: [] for cat in NETRA_CATEGORIES}
@@ -92,6 +94,9 @@ def compare(subsidiary_code: str, period: str) -> list[dict]:
     for cat in NETRA_CATEGORIES:
         accounts   = category_local.get(cat, [])
         local_tot  = sum(a["amount_krw"] for a in accounts)
+        # 매출액·선수금은 현지회계에서 대변잔액(음수)으로 기록 → 부호 반전
+        if cat in _CREDIT_CATEGORIES:
+            local_tot = -local_tot
         netra_tot  = netra_totals.get(cat, 0.0)
         diff       = local_tot - netra_tot
 

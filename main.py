@@ -17,16 +17,16 @@ console = Console()
 
 @click.group()
 def cli():
-    """Osstem AI — 해외법인 재무제표 자동 검증 시스템"""
+    """Osstem AI - 해외법인 재무제표 자동 검증 시스템"""
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# recon — 3-System Reconciliation (현지회계 / 네트라 / Confinas)
+# recon - 3-System Reconciliation (현지회계 / 네트라 / Confinas)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @cli.group("recon")
 def recon():
-    """현지회계 · 네트라 · Confinas 3-시스템 계정 대사 및 업로드"""
+    """현지회계 . 네트라 . Confinas 3-시스템 계정 대사 및 업로드"""
 
 
 @recon.command("init-db")
@@ -86,14 +86,14 @@ def master_list(corp):
     table.add_column("법인", width=6)
     table.add_column("현지코드", width=12)
     table.add_column("현지계정명", width=20)
-    table.add_column("네트라코드", width=12)
+    table.add_column("네트라항목", width=12)
     table.add_column("Confinas코드", width=14)
     table.add_column("신계정", width=18)
 
     for r in rows:
         table.add_row(
             r["subsidiary"], r["local_code"] or "",
-            r["local_name"] or "", r["netra_code"] or "",
+            r["local_name"] or "", r["netra_category"] or "",
             r["confinas_code"] or "", r["standard_code"] or "",
         )
 
@@ -110,7 +110,7 @@ def upload_local(corp, period, filepath, sheet):
     """현지회계프로그램 엑셀 데이터를 MySQL에 업로드합니다."""
     from reconciliation.uploader import upload_local as _upload
 
-    console.print(f"[cyan]▶ {corp} {period} 현지회계 업로드 중...[/cyan]")
+    console.print(f"[cyan]> {corp} {period} 현지회계 업로드 중...[/cyan]")
     result = _upload(corp, period, filepath, sheet)
     _print_upload_result(result)
 
@@ -124,7 +124,7 @@ def upload_netra(corp, period, filepath, sheet):
     """네트라 엑셀 데이터를 MySQL에 업로드합니다."""
     from reconciliation.uploader import upload_netra as _upload
 
-    console.print(f"[cyan]▶ {corp} {period} 네트라 업로드 중...[/cyan]")
+    console.print(f"[cyan]> {corp} {period} 네트라 업로드 중...[/cyan]")
     result = _upload(corp, period, filepath, sheet)
     _print_upload_result(result)
 
@@ -133,7 +133,7 @@ def upload_netra(corp, period, filepath, sheet):
 @click.option("--corp",   required=True, help="법인 코드 (예: UZ01)")
 @click.option("--period", required=True, help="기간 (예: 2025-03)")
 def verify(corp, period):
-    """업로드 완료 여부를 검증합니다 (대차균형 · 행 수 · 누락계정)."""
+    """업로드 완료 여부를 검증합니다 (대차균형 . 행 수 . 누락계정)."""
     from reconciliation.verifier import verify as _verify
 
     result = _verify(corp, period)
@@ -186,6 +186,42 @@ def verify(corp, period):
         console.print(log_table)
 
 
+@recon.command("upload-netra-sources")
+@click.option("--corp",    required=True, help="법인 코드 (예: UZ01)")
+@click.option("--period",  required=True, help="기간 (예: 2026-03)")
+@click.option("--ar",      "ar_file",    required=True, help="AR 파일 (매출채권/선수금)")
+@click.option("--sales",   "sales_file", required=True, help="Sales List 파일 (매출액)")
+@click.option("--sbs",     "sbs_file",   required=True, help="SBS 파일 (원가/재고자산)")
+@click.option("--currency", default="UZS", help="통화 코드 (기본: UZS)")
+def upload_netra_sources(corp, period, ar_file, sales_file, sbs_file, currency):
+    """AR / Sales List / SBS 파일에서 네트라 5개 항목을 집계해 업로드합니다.
+
+    \b
+    - 매출채권/선수금: AR BALANCE 양수/음수 합산
+    - 매출액: Sales List NET AMT (STEP1별 저장, 비교는 합계)
+    - 원가/재고자산: SBS col13/col18 (STEP1별 저장, 비교는 합계)
+    """
+    from reconciliation.uploader import upload_netra_from_sources
+
+    console.print(f"[cyan]> {corp} {period} 네트라 소스 업로드 중...[/cyan]")
+    result = upload_netra_from_sources(corp, period, ar_file, sales_file, sbs_file, currency)
+
+    if result["status"] == "error":
+        console.print(f"[red]X 실패: {result['message']}[/red]")
+        return
+
+    console.print(f"[green]OK 업로드 완료  총 {result['row_count']}행[/green]")
+    console.print()
+    cats = result.get("categories", {})
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan")
+    table.add_column("항목",     width=12)
+    table.add_column("금액",     width=22, justify="right")
+    for cat in ["매출채권", "선수금", "매출액", "원가", "재고자산"]:
+        amt = cats.get(cat, 0)
+        table.add_row(cat, f"{amt:,.0f}")
+    console.print(table)
+
+
 @recon.command("upload-netra-direct")
 @click.option("--corp",   required=True, help="법인 코드 (예: UZ01)")
 @click.option("--period", required=True, help="기간 (예: 2025-03)")
@@ -236,14 +272,14 @@ def compare(corp, period, detail):
 
     if not rows:
         console.print("[yellow]! 비교할 데이터가 없습니다.[/yellow]")
-        console.print("  1) recon master-import — 계정 마스터에 네트라 항목 설정 확인")
-        console.print("  2) recon upload-local   — 현지회계 데이터 업로드")
-        console.print("  3) recon upload-netra   또는 upload-netra-direct — 네트라 데이터 입력")
+        console.print("  1) recon master-import - 계정 마스터에 네트라 항목 설정 확인")
+        console.print("  2) recon upload-local   - 현지회계 데이터 업로드")
+        console.print("  3) recon upload-netra   또는 upload-netra-direct - 네트라 데이터 입력")
         return
 
     flagged = sum(1 for r in rows if r["flagged"])
     console.print(
-        f"\n[bold]현지회계(집계) vs 네트라 — {corp} {period}[/bold]  "
+        f"\n[bold]현지회계(집계) vs 네트라 - {corp} {period}[/bold]  "
         f"[yellow]차이 항목: {flagged}/5[/yellow]\n"
     )
 
@@ -408,7 +444,7 @@ def export_confinas(corp, period, out_filepath):
     """현지회계 데이터를 Confinas 업로드용 엑셀로 변환합니다."""
     from reconciliation.confinas_exporter import export as _export
 
-    console.print(f"[cyan]▶ {corp} {period} Confinas 엑셀 생성 중...[/cyan]")
+    console.print(f"[cyan]> {corp} {period} Confinas 엑셀 생성 중...[/cyan]")
     try:
         count = _export(corp, period, out_filepath)
         console.print(
@@ -475,7 +511,7 @@ def validate(corp, period, source, sheet,
         console.print(f"[green]OK 1C 연결 성공: {onec_url}[/green]")
 
     for code in targets:
-        console.print(f"\n[bold cyan]▶ {code}  {period}  [{source.upper()}][/bold cyan]")
+        console.print(f"\n[bold cyan]> {code}  {period}  [{source.upper()}][/bold cyan]")
 
         try:
             if source == "excel":
@@ -523,7 +559,7 @@ def _print_result(result) -> None:
     summary = result.summary()
 
     if result.is_clean:
-        console.print("[green]OK 검증 통과 — 이슈 없음[/green]")
+        console.print("[green]OK 검증 통과 - 이슈 없음[/green]")
         return
 
     # 요약 배너

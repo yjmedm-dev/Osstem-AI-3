@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS financial_netra (
     subsidiary_code VARCHAR(10)     NOT NULL,
     period          VARCHAR(7)      NOT NULL,
     category        VARCHAR(20)     NOT NULL COMMENT '매출채권|선수금|원가|재고자산|매출액',
+    step1           VARCHAR(50)     COMMENT 'STEP1 구분 (선택)',
     amount          DECIMAL(20, 2)  DEFAULT 0 COMMENT '현지통화 금액',
     currency        VARCHAR(10),
     exchange_rate   DECIMAL(15, 6),

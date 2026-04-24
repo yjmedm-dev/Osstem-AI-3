@@ -502,3 +502,145 @@ def upload_netra_direct(
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 네트라 소스 파일 3종(AR / SalesList / SBS) → financial_netra 업로드
+# ─────────────────────────────────────────────────────────────────────────────
+
+def upload_netra_from_sources(
+    subsidiary_code: str,
+    period: str,
+    ar_filepath: str | Path,
+    sales_filepath: str | Path,
+    sbs_filepath: str | Path,
+    currency: str = "UZS",
+) -> dict:
+    """AR / Sales List / SBS 파일에서 네트라 5개 항목을 집계해 업로드한다.
+
+    집계 방식:
+      매출채권  = AR BALANCE > 0 합계
+      선수금    = AR BALANCE < 0 절댓값 합계
+      매출액    = Sales List NET AMT 합계  (STEP1별 세부 저장)
+      원가      = SBS col13 합계           (STEP1별 세부 저장)
+      재고자산  = SBS col18 합계           (STEP1별 세부 저장)
+
+    네트라 비교는 category 합계 기준이며,
+    STEP1은 financial_netra.step1 에 세부 참고용으로 저장된다.
+    현지회계는 STEP1 구분 없이 category 합계로만 비교한다.
+    """
+    subsidiary_code = subsidiary_code.upper()
+
+    try:
+        rows: list[FinancialNetra] = []
+
+        # ── 1. 매출채권 / 선수금 (AR) ─────────────────────────────────────
+        ar_df = pd.read_excel(ar_filepath, sheet_name=0, dtype=str).fillna("")
+        ar_df.columns = [c.strip() for c in ar_df.columns]
+
+        bal_col = next((c for c in ar_df.columns if c.upper() == "BALANCE"), None)
+        if bal_col is None:
+            return {"status": "error", "message": "AR 파일에 BALANCE 컬럼이 없습니다."}
+
+        ar_df["_bal"] = ar_df[bal_col].apply(_to_float)
+        receivable = ar_df[ar_df["_bal"] > 0]["_bal"].sum()
+        advance    = abs(ar_df[ar_df["_bal"] < 0]["_bal"].sum())
+
+        rows.append(FinancialNetra(
+            subsidiary_code=subsidiary_code, period=period,
+            category="매출채권", step1=None,
+            amount=receivable, currency=currency,
+            exchange_rate=None, amount_krw=receivable,
+            uploaded_at=datetime.utcnow(),
+        ))
+        rows.append(FinancialNetra(
+            subsidiary_code=subsidiary_code, period=period,
+            category="선수금", step1=None,
+            amount=advance, currency=currency,
+            exchange_rate=None, amount_krw=advance,
+            uploaded_at=datetime.utcnow(),
+        ))
+
+        # ── 2. 매출액 (Sales List — STEP1별) ─────────────────────────────
+        sl_df = pd.read_excel(sales_filepath, sheet_name=0, dtype=str).fillna("")
+        sl_df.columns = [c.strip() for c in sl_df.columns]
+        sl_df["_net"] = sl_df["NET AMT"].apply(_to_float)
+
+        step1_col = "STEP 1" if "STEP 1" in sl_df.columns else "STEP1"
+        for step1, grp in sl_df.groupby(step1_col):
+            amt = grp["_net"].sum()
+            rows.append(FinancialNetra(
+                subsidiary_code=subsidiary_code, period=period,
+                category="매출액", step1=str(step1),
+                amount=amt, currency=currency,
+                exchange_rate=None, amount_krw=amt,
+                uploaded_at=datetime.utcnow(),
+            ))
+
+        # ── 3. 원가 / 재고자산 (SBS — STEP1별) ───────────────────────────
+        sbs_raw = pd.read_excel(sbs_filepath, sheet_name=0, header=None, dtype=str).fillna("")
+        sbs_df  = sbs_raw.iloc[1:].copy()
+        sbs_df.columns = range(len(sbs_df.columns))
+        sbs_df["_cogs"] = sbs_df[13].apply(_to_float)
+        sbs_df["_inv"]  = sbs_df[18].apply(_to_float)
+
+        for step1, grp in sbs_df.groupby(19):
+            cogs = grp["_cogs"].sum()
+            inv  = grp["_inv"].sum()
+            rows.append(FinancialNetra(
+                subsidiary_code=subsidiary_code, period=period,
+                category="원가", step1=str(step1),
+                amount=cogs, currency=currency,
+                exchange_rate=None, amount_krw=cogs,
+                uploaded_at=datetime.utcnow(),
+            ))
+            rows.append(FinancialNetra(
+                subsidiary_code=subsidiary_code, period=period,
+                category="재고자산", step1=str(step1),
+                amount=inv, currency=currency,
+                exchange_rate=None, amount_krw=inv,
+                uploaded_at=datetime.utcnow(),
+            ))
+
+        if not rows:
+            return {"status": "error", "message": "집계된 데이터가 없습니다."}
+
+        with get_session() as session:
+            session.execute(
+                delete(FinancialNetra).where(
+                    FinancialNetra.subsidiary_code == subsidiary_code,
+                    FinancialNetra.period == period,
+                )
+            )
+            session.add_all(rows)
+            session.add(UploadLog(
+                system_name="netra",
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="success",
+                row_count=len(rows),
+                message=f"AR:{Path(ar_filepath).name} / SL:{Path(sales_filepath).name} / SBS:{Path(sbs_filepath).name}",
+            ))
+
+        # category별 합계 요약
+        from collections import defaultdict
+        cat_totals: dict[str, float] = defaultdict(float)
+        for r in rows:
+            cat_totals[r.category] += float(r.amount or 0)
+
+        return {
+            "status":     "success",
+            "row_count":  len(rows),
+            "categories": dict(cat_totals),
+        }
+
+    except Exception as e:
+        with get_session() as session:
+            session.add(UploadLog(
+                system_name="netra",
+                subsidiary_code=subsidiary_code,
+                period=period,
+                status="error",
+                message=str(e),
+            ))
+        return {"status": "error", "message": str(e)}
