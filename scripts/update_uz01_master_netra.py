@@ -17,6 +17,13 @@ SRC     = ROOT / "data/reference/UZ01_계정마스터_양식.xlsx"
 OUT     = ROOT / "data/reference/UZ01_계정마스터_양식.xlsx"
 
 NETRA_CATS = ["매출채권", "선수금", "원가", "재고자산", "매출액"]
+STEP1_CATS = [
+    "(HQ) PRODUCT",
+    "(KR) MERCHANDISE",
+    "(US) PRODUCT",
+    "(Relative) PRODUCT",
+    "(Domestic) MERCHANDISE",
+]
 
 THIN   = Side(style="thin")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
@@ -27,7 +34,8 @@ NEW_HEADERS = [
     ("subsidiary_code", "법인코드",              "FFF2CC", 10),
     ("local_code",      "현지회계코드(1C)",       "FFF2CC", 18),
     ("local_name",      "현지회계 계정명",        "FFF2CC", 28),
-    ("netra_category",  "네트라 항목",            "D0E4FF", 14),  # 청색 변경
+    ("netra_category",  "네트라 항목",            "D0E4FF", 14),
+    ("netra_step1",     "네트라 Step1",           "D0E4FF", 22),  # 청색 동일
     ("confinas_code",   "Confinas 코드",         "D9EAD3", 16),
     ("confinas_name",   "Confinas 계정명",       "D9EAD3", 20),
     ("standard_code",   "신계정코드(FP/PL)",      "EFEFEF", 22),
@@ -41,6 +49,8 @@ OLD_HEADER_MAP = {
     "현지회계코드(1c)":   "local_code",
     "현지회계 계정명":    "local_name",
     "네트라 계정코드":    "netra_code_OLD",      # 삭제 대상
+    "네트라 step1":      "netra_step1",
+    "네트라 Step1":      "netra_step1",
     "네트라 계정명":      "netra_name_OLD",      # 삭제 대상
     "confinas 코드":     "confinas_code",
     "confinas 계정명":   "confinas_name",
@@ -109,7 +119,7 @@ for ri, d in enumerate(old_data, start=3):
         c.border = BORDER
         c.alignment = Alignment(vertical="center")
 
-# Dropdown validation: netra_category 열 (4열)
+# Dropdown: netra_category
 netra_col_idx = next(
     ci for ci, (f, *_) in enumerate(NEW_HEADERS, 1) if f == "netra_category"
 )
@@ -127,6 +137,25 @@ dv.sqref = (
     f"{get_column_letter(netra_col_idx)}{len(old_data)+10}"
 )
 ws.add_data_validation(dv)
+
+# Dropdown: netra_step1
+step1_col_idx = next(
+    ci for ci, (f, *_) in enumerate(NEW_HEADERS, 1) if f == "netra_step1"
+)
+dv2 = DataValidation(
+    type="list",
+    formula1='"' + ",".join(STEP1_CATS) + '"',
+    allow_blank=True,
+    showDropDown=False,
+    showErrorMessage=True,
+    errorTitle="입력오류",
+    error="(HQ) PRODUCT / (KR) MERCHANDISE / (US) PRODUCT / (Relative) PRODUCT / (Domestic) MERCHANDISE 중 선택하세요.",
+)
+dv2.sqref = (
+    f"{get_column_letter(step1_col_idx)}3:"
+    f"{get_column_letter(step1_col_idx)}{len(old_data)+10}"
+)
+ws.add_data_validation(dv2)
 
 # 열 너비
 for ci, (_, _, _, w) in enumerate(NEW_HEADERS, 1):
@@ -147,6 +176,10 @@ guide = [
     ["netra_category",  "청색 ★", "네트라 대사 항목 — 드롭다운 선택 (아래 5개 중)"],
     ["",                "",        "  · 매출채권  · 선수금  · 원가  · 재고자산  · 매출액"],
     ["",                "",        "  해당 없으면 빈칸"],
+    ["netra_step1",     "청색 ★", "네트라 Step1 구분 — 드롭다운 선택 (아래 5개 중)"],
+    ["",                "",        "  · (HQ) PRODUCT  · (KR) MERCHANDISE  · (US) PRODUCT"],
+    ["",                "",        "  · (Relative) PRODUCT  · (Domestic) MERCHANDISE"],
+    ["",                "",        "  매출액/원가/재고자산 계정만 입력, 매출채권/선수금은 빈칸"],
     ["confinas_code",   "녹색",    "Confinas 업로드 코드 (이미 입력됨)"],
     ["confinas_name",   "녹색",    "Confinas 계정명 (이미 입력됨)"],
     ["standard_code",   "회색",    "내부 신계정코드 — 참고용"],
